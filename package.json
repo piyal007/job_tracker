@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
+    "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "firebase": "^12.6.0",
     "gsap": "^3.13.0",
     "lucide-react": "^0.553.0",
     "next": "16.0.3",
@@ -20,6 +22,7 @@
     "react-day-picker": "^9.11.1",
     "react-dom": "19.2.0",
     "react-hot-toast": "^2.6.0",
+    "sweetalert2": "^11.26.3",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {

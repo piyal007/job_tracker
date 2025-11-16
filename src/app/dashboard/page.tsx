@@ -1,12 +1,19 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Trash2, Edit, CalendarIcon, ChevronDown, Save, Database } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, Search, Trash2, Edit, CalendarIcon, ChevronDown, Save, Database, LogOut } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { createPortal } from 'react-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import ShareButton from '@/components/ShareButton';
+import axios from 'axios';
+import Swal from 'sweetalert2';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+
+const ALLOWED_EMAIL = 'piyalsha007@gmail.com';
 
 type JobStatus = 'applied' | 'screening' | 'interview' | 'offer' | 'rejected';
 
@@ -84,6 +91,7 @@ interface JobPortal {
 }
 
 export default function Dashboard() {
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState<'tracker' | 'portals'>('tracker');
     const [jobs, setJobs] = useState<Job[]>([]);
     const [portals, setPortals] = useState<JobPortal[]>([
@@ -97,18 +105,32 @@ export default function Dashboard() {
     const [editingJob, setEditingJob] = useState<Job | null>(null);
     const [editingCell, setEditingCell] = useState<{ jobId: string; field: keyof Job } | null>(null);
     const [loading, setLoading] = useState(true);
+    const [user, setUser] = useState<any>(null);
     const tableRef = useRef<HTMLDivElement>(null);
+
+    // Auth check
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            if (!currentUser) {
+                router.push('/');
+            } else if (currentUser.email !== ALLOWED_EMAIL) {
+                // Sign out unauthorized users
+                await signOut(auth);
+                toast.error('Unauthorized: Only piyalsha007@gmail.com is allowed');
+                router.push('/');
+            } else {
+                setUser(currentUser);
+            }
+        });
+
+        return () => unsubscribe();
+    }, [router]);
 
     // Fetch jobs from API
     const fetchJobs = async () => {
         try {
-            const response = await fetch(`${API_URL}/api/jobs`);
-            if (response.ok) {
-                const data = await response.json();
-                setJobs(data.length > 0 ? data : demoJobs);
-            } else {
-                setJobs(demoJobs);
-            }
+            const { data } = await axios.get(`${API_URL}/api/jobs`);
+            setJobs(data.length > 0 ? data : demoJobs);
         } catch (error) {
             console.error('Failed to fetch jobs:', error);
             setJobs(demoJobs);
@@ -124,15 +146,13 @@ export default function Dashboard() {
 
     const fetchPortals = async () => {
         try {
-            const response = await fetch(`${API_URL}/api/portals`);
-            if (response.ok) {
-                const data = await response.json();
-                if (data.length > 0) {
-                    setPortals(data);
-                }
+            const { data } = await axios.get(`${API_URL}/api/portals`);
+            if (data && data.length > 0) {
+                setPortals(data);
             }
         } catch (error) {
             console.error('Failed to fetch portals:', error);
+            // Keep default portals if API fails
         }
     };
 
@@ -190,8 +210,19 @@ export default function Dashboard() {
         e.currentTarget.reset();
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('Delete this job application?')) {
+    const handleDelete = async (id: string) => {
+        const result = await Swal.fire({
+            title: 'Delete Job?',
+            text: "This will remove the job from your tracker",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Yes, delete it!',
+            cancelButtonText: 'Cancel'
+        });
+
+        if (result.isConfirmed) {
             setJobs(jobs.filter(j => j.id !== id));
             toast.success('🗑️ Deleted locally', {
                 duration: 1500,
@@ -503,6 +534,15 @@ export default function Dashboard() {
                         <ShareButton />
                         <button
                             onClick={async () => {
+                                await signOut(auth);
+                                router.push('/');
+                            }}
+                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+                        >
+                            <LogOut className="w-5 h-5" /> Logout
+                        </button>
+                        <button
+                            onClick={async () => {
                                 try {
                                     // Remove _id field from jobs before syncing
                                     const jobsToSync = jobs.map(({ _id, ...job }: any) => job);
@@ -734,26 +774,15 @@ export default function Dashboard() {
                             onClick={async () => {
                                 try {
                                     const portalsToSync = portals.map(({ _id, ...portal }: any) => portal);
-                                    const response = await fetch(`${API_URL}/api/portals/sync`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify(portalsToSync)
+                                    const { data } = await axios.post(`${API_URL}/api/portals/sync`, portalsToSync);
+
+                                    toast.success(`✅ ${data.message}`, {
+                                        duration: 3000,
+                                        position: 'bottom-right',
                                     });
-                                    const data = await response.json();
-                                    if (response.ok) {
-                                        toast.success(`✅ ${data.message}`, {
-                                            duration: 3000,
-                                            position: 'bottom-right',
-                                        });
-                                    } else {
-                                        toast.error(`❌ Error: ${data.error || 'Failed to save'}`, {
-                                            duration: 3000,
-                                            position: 'bottom-right',
-                                        });
-                                    }
-                                } catch (error) {
+                                } catch (error: any) {
                                     console.error('Failed to save portals:', error);
-                                    toast.error('❌ Failed to save. Make sure backend is running!', {
+                                    toast.error(`❌ ${error.response?.data?.error || 'Failed to save. Make sure backend is running!'}`, {
                                         duration: 3000,
                                         position: 'bottom-right',
                                     });
@@ -793,8 +822,19 @@ export default function Dashboard() {
                                                 <EditablePortalCell portal={portal} field="category" className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-b border-r border-gray-400" />
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm border-b border-gray-400 bg-gray-50">
                                                     <button
-                                                        onClick={() => {
-                                                            if (confirm('Delete this portal?')) {
+                                                        onClick={async () => {
+                                                            const result = await Swal.fire({
+                                                                title: 'Delete Portal?',
+                                                                text: "This will remove the portal from your list",
+                                                                icon: 'warning',
+                                                                showCancelButton: true,
+                                                                confirmButtonColor: '#dc2626',
+                                                                cancelButtonColor: '#6b7280',
+                                                                confirmButtonText: 'Yes, delete it!',
+                                                                cancelButtonText: 'Cancel'
+                                                            });
+
+                                                            if (result.isConfirmed) {
                                                                 setPortals(portals.filter(p => p.id !== portal.id));
                                                                 toast.success('🗑️ Deleted portal', {
                                                                     duration: 1500,

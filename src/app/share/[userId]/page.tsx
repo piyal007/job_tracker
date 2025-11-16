@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { ExternalLink } from 'lucide-react';
+import axios from 'axios';
 
 interface Job {
     id: string;
@@ -35,6 +36,8 @@ export default function SharedView() {
     const [portals, setPortals] = useState<JobPortal[]>([]);
     const [activeTab, setActiveTab] = useState<'tracker' | 'portals'>('tracker');
     const [loading, setLoading] = useState(true);
+    const [selectedJobRow, setSelectedJobRow] = useState<string | null>(null);
+    const [selectedPortalRow, setSelectedPortalRow] = useState<string | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -43,19 +46,12 @@ export default function SharedView() {
     const fetchData = async () => {
         try {
             const [jobsRes, portalsRes] = await Promise.all([
-                fetch(`${API_URL}/api/jobs`),
-                fetch(`${API_URL}/api/portals`)
+                axios.get(`${API_URL}/api/jobs`),
+                axios.get(`${API_URL}/api/portals`)
             ]);
 
-            if (jobsRes.ok) {
-                const jobsData = await jobsRes.json();
-                setJobs(jobsData);
-            }
-
-            if (portalsRes.ok) {
-                const portalsData = await portalsRes.json();
-                setPortals(portalsData);
-            }
+            setJobs(jobsRes.data);
+            setPortals(portalsRes.data);
         } catch (error) {
             console.error('Failed to fetch data:', error);
         } finally {
@@ -121,40 +117,48 @@ export default function SharedView() {
                         <table className="w-full border-collapse" style={{ minWidth: '1200px' }}>
                             <thead className="bg-gray-700">
                                 <tr>
-                                    <th className="px-4 py-4 text-center text-xs font-semibold text-white uppercase">#</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">Date</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">Company</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">Position</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">Job Nature</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">Job Type</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">Location</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">Status</th>
+                                    <th className="px-4 py-4 text-center text-xs font-semibold text-white uppercase border-r border-gray-600">#</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Date</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Company</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Position</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Job Nature</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Job Type</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Location</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Status</th>
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">Link</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {jobs.map((job, index) => (
-                                    <tr key={job.id} className="border-b hover:bg-gray-50">
-                                        <td className="px-4 py-4 text-center text-sm font-medium text-gray-700">{index + 1}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-500">{new Date(job.date).toLocaleDateString()}</td>
-                                        <td className="px-6 py-4 text-sm font-medium text-gray-900">{job.company}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-900">{job.title}</td>
-                                        <td className="px-6 py-4 text-sm">
+                                    <tr 
+                                        key={job.id} 
+                                        onClick={() => setSelectedJobRow(job.id)}
+                                        className={`border-b cursor-pointer ${
+                                            selectedJobRow === job.id 
+                                                ? 'bg-blue-200' 
+                                                : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                                        } hover:bg-blue-100`}
+                                    >
+                                        <td className="px-4 py-4 text-center text-sm font-medium text-gray-700 border-r border-gray-300">{index + 1}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-500 border-r border-gray-300">{new Date(job.date).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 text-sm font-medium text-gray-900 border-r border-gray-300">{job.company}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-900 border-r border-gray-300">{job.title}</td>
+                                        <td className="px-6 py-4 text-sm border-r border-gray-300">
                                             {job.jobNature && (
                                                 <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
                                                     {job.jobNature}
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-sm">
+                                        <td className="px-6 py-4 text-sm border-r border-gray-300">
                                             {job.jobType && (
                                                 <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
                                                     {job.jobType}
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-500">{job.location || '-'}</td>
-                                        <td className="px-6 py-4 text-sm">
+                                        <td className="px-6 py-4 text-sm text-gray-500 border-r border-gray-300">{job.location || '-'}</td>
+                                        <td className="px-6 py-4 text-sm border-r border-gray-300">
                                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>
                                                 {job.status}
                                             </span>
@@ -173,23 +177,40 @@ export default function SharedView() {
                         </table>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {portals.map((portal) => (
-                            <a
-                                key={portal.id}
-                                href={portal.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block p-6 bg-white rounded-lg border-2 border-gray-300 hover:border-blue-500 hover:shadow-md transition-all"
-                            >
-                                <h3 className="text-lg font-semibold text-gray-900 mb-2">{portal.name}</h3>
-                                <p className="text-sm text-gray-600 mb-2">{portal.category}</p>
-                                <p className="text-xs text-blue-600 truncate flex items-center gap-1">
-                                    <ExternalLink className="w-3 h-3" />
-                                    {portal.url}
-                                </p>
-                            </a>
-                        ))}
+                    <div className="bg-white rounded-lg shadow-sm border-2 border-gray-300 overflow-auto">
+                        <table className="w-full border-collapse">
+                            <thead className="bg-gray-700">
+                                <tr>
+                                    <th className="px-4 py-4 text-center text-xs font-semibold text-white uppercase border-r border-gray-600">#</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Portal Name</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600">Category</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase">URL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {portals.map((portal, index) => (
+                                    <tr 
+                                        key={portal.id} 
+                                        onClick={() => setSelectedPortalRow(portal.id)}
+                                        className={`border-b cursor-pointer ${
+                                            selectedPortalRow === portal.id 
+                                                ? 'bg-blue-200' 
+                                                : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                                        } hover:bg-blue-100`}
+                                    >
+                                        <td className="px-4 py-4 text-center text-sm font-medium text-gray-700 border-r border-gray-300">{index + 1}</td>
+                                        <td className="px-6 py-4 text-sm font-medium text-gray-900 border-r border-gray-300">{portal.name}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-600 border-r border-gray-300">{portal.category}</td>
+                                        <td className="px-6 py-4 text-sm">
+                                            <a href={portal.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                                <ExternalLink className="w-4 h-4" />
+                                                {portal.url}
+                                            </a>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </div>
