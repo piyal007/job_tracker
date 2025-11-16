@@ -6,6 +6,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { createPortal } from 'react-dom';
 import toast, { Toaster } from 'react-hot-toast';
+import ShareButton from '@/components/ShareButton';
 
 type JobStatus = 'applied' | 'screening' | 'interview' | 'offer' | 'rejected';
 
@@ -499,6 +500,7 @@ export default function Dashboard() {
                         >
                             <Plus className="w-5 h-5" /> Add Job
                         </button>
+                        <ShareButton />
                         <button
                             onClick={async () => {
                                 try {
