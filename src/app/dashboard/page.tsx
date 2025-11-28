@@ -12,10 +12,13 @@ import axios from 'axios';
 import Swal from 'sweetalert2';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { chatWithData } from '@/lib/gemini';
+import ReactMarkdown from 'react-markdown';
+import GoogleDocsImport from '@/components/GoogleDocsImport';
 
 const ALLOWED_EMAIL = 'piyalsha007@gmail.com';
 
-type JobStatus = 'applied' | 'screening' | 'interview' | 'offer' | 'rejected';
+type JobStatus = 'applied' | 'No Response' | 'Short listed' | 'On Task' | 'interview' | 'On Follow Up' | 'On Second Follow Up' | 'screening' | 'offer' | 'rejected';
 
 interface Job {
     id: string;
@@ -106,7 +109,23 @@ export default function Dashboard() {
     const [editingCell, setEditingCell] = useState<{ jobId: string; field: keyof Job } | null>(null);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<any>(null);
+    const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+    const [bulkImportText, setBulkImportText] = useState('');
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [showAIChat, setShowAIChat] = useState(false);
+    const [aiChatMessages, setAiChatMessages] = useState<Array<{role: 'user' | 'assistant', content: string, action?: any}>>([]);
+    const [aiChatInput, setAiChatInput] = useState('');
+    const [pendingAction, setPendingAction] = useState<any>(null);
     const tableRef = useRef<HTMLDivElement>(null);
+    const chatMessagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to latest message
+    useEffect(() => {
+        if (chatMessagesEndRef.current) {
+            chatMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [aiChatMessages]);
 
     // Auth check
     useEffect(() => {
@@ -153,6 +172,152 @@ export default function Dashboard() {
         } catch (error) {
             console.error('Failed to fetch portals:', error);
             // Keep default portals if API fails
+        }
+    };
+
+    const handleAIChat = async () => {
+        if (!aiChatInput.trim()) return;
+
+        const userMessage = aiChatInput;
+        setAiChatInput('');
+        
+        // Add user message to chat
+        setAiChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+        setIsGenerating(true);
+
+        try {
+            const result = await chatWithData(userMessage, jobs, portals, aiChatMessages);
+            
+            if (result.success && result.data) {
+                if (result.action) {
+                    // AI wants to perform an action - show approval UI
+                    const actionData = result.jobsToAdd || result.updateData || result.deleteData || result.bulkData;
+                    setAiChatMessages(prev => [...prev, { 
+                        role: 'assistant', 
+                        content: result.data,
+                        action: { type: result.action, data: actionData }
+                    }]);
+                    setPendingAction({ type: result.action, data: actionData });
+                } else {
+                    setAiChatMessages(prev => [...prev, { role: 'assistant', content: result.data }]);
+                }
+            } else {
+                setAiChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${result.error}` }]);
+            }
+        } catch (error) {
+            setAiChatMessages(prev => [...prev, { role: 'assistant', content: 'Failed to get response. Check your API key.' }]);
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const handleApproveAction = () => {
+        if (!pendingAction) return;
+
+        switch (pendingAction.type) {
+            case 'add_jobs':
+                const newJobs = pendingAction.data.map((job: any) => ({
+                    ...job,
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    date: new Date().toISOString(),
+                    notes: job.notes || '',
+                    jobLink: job.jobLink || '',
+                    email: job.email || '',
+                    comments: job.comments || ''
+                }));
+                setJobs([...jobs, ...newJobs]);
+                toast.success(`✅ Added ${newJobs.length} job(s)!`);
+                setAiChatMessages(prev => [...prev, { 
+                    role: 'assistant', 
+                    content: `Done! Added ${newJobs.length} job(s) to your tracker.` 
+                }]);
+                break;
+
+            case 'update_job':
+                const { id, updates } = pendingAction.data;
+                setJobs(jobs.map(j => j.id === id ? { ...j, ...updates } : j));
+                toast.success(`✅ Updated job!`);
+                setAiChatMessages(prev => [...prev, { 
+                    role: 'assistant', 
+                    content: `Done! Updated the job.` 
+                }]);
+                break;
+
+            case 'delete_jobs':
+                const { ids } = pendingAction.data;
+                setJobs(jobs.filter(j => !ids.includes(j.id)));
+                toast.success(`✅ Deleted ${ids.length} job(s)!`);
+                setAiChatMessages(prev => [...prev, { 
+                    role: 'assistant', 
+                    content: `Done! Deleted ${ids.length} job(s).` 
+                }]);
+                break;
+
+            case 'bulk_update':
+                const { filter, updates: bulkUpdates } = pendingAction.data;
+                const updatedJobs = jobs.map(job => {
+                    const matches = Object.entries(filter).every(([key, value]) => job[key as keyof Job] === value);
+                    return matches ? { ...job, ...bulkUpdates } : job;
+                });
+                const changedCount = updatedJobs.filter((j, i) => j !== jobs[i]).length;
+                setJobs(updatedJobs);
+                toast.success(`✅ Updated ${changedCount} job(s)!`);
+                setAiChatMessages(prev => [...prev, { 
+                    role: 'assistant', 
+                    content: `Done! Updated ${changedCount} job(s).` 
+                }]);
+                break;
+        }
+
+        setPendingAction(null);
+    };
+
+    const handleRejectAction = () => {
+        setPendingAction(null);
+        setAiChatMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: 'No problem! Let me know if you need anything else.' 
+        }]);
+    };
+
+    const handleBulkImport = () => {
+        try {
+            const trimmedText = bulkImportText.trim();
+            const newJobs: Job[] = [];
+
+            // Parse JSON only
+            const jsonData = JSON.parse(trimmedText);
+            const jobsArray = Array.isArray(jsonData) ? jsonData : [jsonData];
+
+            jobsArray.forEach((item: any) => {
+                const newJob: Job = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    title: item.title || item.position || item.role || 'Position',
+                    company: item.company || item.companyName || item.employer || '',
+                    location: item.location || item.city || item.place || '',
+                    salary: item.salary || item.compensation || item.pay || '',
+                    status: (item.status?.toLowerCase() || 'applied') as JobStatus,
+                    notes: item.notes || item.description || '',
+                    date: item.date || new Date().toISOString(),
+                    jobNature: item.jobNature || item.nature || item.employment || '',
+                    jobType: item.jobType || item.type || item.workType || '',
+                    jobLink: item.jobLink || item.link || item.url || '',
+                    email: item.email || item.contact || '',
+                    comments: item.comments || item.remarks || ''
+                };
+                newJobs.push(newJob);
+            });
+
+            if (newJobs.length > 0) {
+                setJobs([...jobs, ...newJobs]);
+                toast.success(`✅ Added ${newJobs.length} job${newJobs.length > 1 ? 's' : ''} successfully!`);
+                setIsBulkImportOpen(false);
+                setBulkImportText('');
+            } else {
+                toast.error('No valid jobs found in the JSON');
+            }
+        } catch (error) {
+            toast.error('Invalid JSON format. Please paste valid JSON.');
         }
     };
 
@@ -223,11 +388,16 @@ export default function Dashboard() {
         });
 
         if (result.isConfirmed) {
-            setJobs(jobs.filter(j => j.id !== id));
-            toast.success('🗑️ Deleted locally', {
-                duration: 1500,
-                position: 'bottom-right',
-            });
+            try {
+                // Delete from MongoDB
+                await axios.delete(`${API_URL}/api/jobs/${id}`);
+                // Update local state
+                setJobs(jobs.filter(j => j.id !== id));
+                toast.success('🗑️ Deleted successfully');
+            } catch (error) {
+                console.error('Delete error:', error);
+                toast.error('Failed to delete job');
+            }
         }
     };
 
@@ -313,9 +483,9 @@ export default function Dashboard() {
                 case 'jobType':
                     return ['Onsite', 'Remote', 'Hybrid'];
                 case 'status':
-                    return ['applied', 'screening', 'interview', 'offer', 'rejected'];
+                    return ['applied', 'No Response', 'Short listed', 'On Task', 'interview', 'On Follow Up', 'On Second Follow Up', 'screening', 'offer', 'rejected'];
                 case 'email':
-                    return ['Not Yet', 'Sent', 'No Response', 'Responded'];
+                    return ['Not Yet', 'Done', 'Sent', 'No Response', 'Responded'];
                 default:
                     return null;
             }
@@ -333,6 +503,7 @@ export default function Dashboard() {
             }
             if (field === 'email') {
                 if (value === 'Not Yet') return 'bg-red-100 text-red-800';
+                if (value === 'Done') return 'bg-green-100 text-green-800';
                 if (value === 'Sent') return 'bg-yellow-100 text-yellow-800';
                 if (value === 'No Response') return 'bg-red-100 text-red-800';
                 if (value === 'Responded') return 'bg-green-100 text-green-800';
@@ -450,8 +621,9 @@ export default function Dashboard() {
 
         return (
             <td
-                className={`${className} ${isLinkField && isEditing ? 'w-96' : ''} transition-all duration-300 ease-in-out`}
+                className={`${className} transition-all duration-300 ease-in-out`}
                 onClick={() => setEditingCell({ jobId: job.id, field })}
+                style={{ maxWidth: isLinkField ? '250px' : field === 'comments' ? '300px' : '200px' }}
             >
                 {shouldShowBadge ? (
                     <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(field, value)} cursor-pointer`}>
@@ -459,11 +631,22 @@ export default function Dashboard() {
                         <ChevronDown className="w-3 h-3" />
                     </span>
                 ) : isLinkField && value ? (
-                    <a href={value} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate block" onClick={(e) => e.stopPropagation()}>
+                    <a 
+                        href={value} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-blue-600 hover:underline block overflow-hidden text-ellipsis whitespace-nowrap" 
+                        onClick={(e) => e.stopPropagation()}
+                        title={value}
+                    >
                         {value}
                     </a>
                 ) : field === 'date' ? (
                     new Date(value).toLocaleDateString()
+                ) : field === 'comments' || field === 'title' || field === 'company' ? (
+                    <div className="overflow-hidden text-ellipsis whitespace-nowrap" title={value || ''}>
+                        {value || '-'}
+                    </div>
                 ) : (
                     value || '-'
                 )}
@@ -473,14 +656,19 @@ export default function Dashboard() {
 
     const statusColors: Record<JobStatus, string> = {
         applied: 'bg-blue-100 text-blue-800',
-        screening: 'bg-yellow-100 text-yellow-800',
+        'No Response': 'bg-red-100 text-red-800',
+        'Short listed': 'bg-gray-100 text-gray-800',
+        'On Task': 'bg-gray-100 text-gray-800',
         interview: 'bg-purple-100 text-purple-800',
+        'On Follow Up': 'bg-green-100 text-green-800',
+        'On Second Follow Up': 'bg-green-200 text-green-900',
+        screening: 'bg-yellow-100 text-yellow-800',
         offer: 'bg-green-100 text-green-800',
         rejected: 'bg-red-100 text-red-800',
     };
 
     return (
-        <div className="h-screen bg-gray-50 p-8 overflow-hidden flex flex-col">
+        <div className="h-screen bg-gray-50 overflow-hidden flex flex-col px-4 py-4">
             <Toaster />
 
             {/* Tabs */}
@@ -492,7 +680,7 @@ export default function Dashboard() {
                         : 'bg-white text-gray-700 hover:bg-gray-100'
                         }`}
                 >
-                    Job Tracker
+                    Job Tracker ({jobs.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('portals')}
@@ -501,7 +689,7 @@ export default function Dashboard() {
                         : 'bg-white text-gray-700 hover:bg-gray-100'
                         }`}
                 >
-                    Job Portals
+                    Job Portals ({portals.length})
                 </button>
             </div>
 
@@ -531,6 +719,24 @@ export default function Dashboard() {
                         >
                             <Plus className="w-5 h-5" /> Add Job
                         </button>
+                        <button
+                            onClick={() => setIsBulkImportOpen(true)}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                        >
+                            <Database className="w-5 h-5" /> Bulk Import
+                        </button>
+                        <GoogleDocsImport onImport={(importedJobs) => {
+                            const newJobs = importedJobs.map((job: any) => ({
+                                ...job,
+                                id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                                date: job.date || new Date().toISOString(),
+                                notes: job.notes || '',
+                                jobLink: job.jobLink || '',
+                                email: job.email || '',
+                                comments: job.comments || ''
+                            }));
+                            setJobs([...jobs, ...newJobs]);
+                        }} />
                         <ShareButton />
                         <button
                             onClick={async () => {
@@ -600,22 +806,22 @@ export default function Dashboard() {
                                 {jobs.length === 0 ? 'No jobs yet. Start tracking your applications!' : 'No jobs match your search.'}
                             </div>
                         ) : (
-                            <div ref={tableRef} className="bg-white rounded-lg shadow-sm border-2 border-gray-400 overflow-auto flex-shrink-0 hide-scrollbar" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+                            <div ref={tableRef} className="bg-white shadow-sm border-t-2 border-gray-400 overflow-auto flex-shrink-0 hide-scrollbar" style={{ maxHeight: 'calc(100vh - 200px)' }}>
                                 <table className="w-full border-collapse" style={{ minWidth: '1400px' }}>
-                                    <thead className="bg-gray-700">
+                                    <thead className="bg-gray-700 sticky top-0 z-10">
                                         <tr>
-                                            <th className="px-4 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">#</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Date</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Company</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Position</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Job Nature</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Job Type</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Company Location</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Job Link</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Job Status</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Email</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Comments</th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-gray-600 whitespace-nowrap">Actions</th>
+                                            <th className="px-4 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '50px' }}>#</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '120px' }}>Date</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '180px' }}>Company Name</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '200px' }}>Position</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '130px' }}>Job Nature</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '120px' }}>Job Type</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '150px' }}>Company Location</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '250px' }}>Job Link</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '140px' }}>Job Status</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '130px' }}>Email</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap" style={{ width: '300px' }}>Comments</th>
+                                            <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-gray-600 whitespace-nowrap" style={{ width: '100px' }}>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -800,9 +1006,9 @@ export default function Dashboard() {
                                 No portals yet. Add your favorite job search websites!
                             </div>
                         ) : (
-                            <div className="bg-white rounded-lg shadow-sm border-2 border-gray-400 overflow-auto hide-scrollbar" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+                            <div className="bg-white shadow-sm border-t-2 border-gray-400 overflow-auto hide-scrollbar" style={{ maxHeight: 'calc(100vh - 200px)' }}>
                                 <table className="w-full border-collapse" style={{ minWidth: '800px' }}>
-                                    <thead className="bg-gray-700">
+                                    <thead className="bg-gray-700 sticky top-0 z-10">
                                         <tr>
                                             <th className="px-4 py-4 text-center text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">#</th>
                                             <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider border-b-2 border-r border-gray-600 whitespace-nowrap">Portal Name</th>
@@ -857,6 +1063,191 @@ export default function Dashboard() {
                     </div>
                 </>
             )}
+
+            {/* Bulk Import Modal */}
+            {isBulkImportOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
+                        <h2 className="text-2xl font-semibold mb-4">Bulk Import Jobs</h2>
+                        <p className="text-gray-600 mb-4 text-sm">
+                            Paste JSON job data. Use the AI Assistant (bottom right) to generate jobs!
+                        </p>
+
+                        <div className="bg-gray-50 p-3 rounded-lg mb-4">
+                            <p className="text-xs font-semibold text-gray-700 mb-2">Supported JSON fields:</p>
+                            <code className="text-xs text-gray-600">
+                                title/position/role, company/companyName, location/city, salary/compensation, 
+                                status, jobType/type, jobNature/employment, jobLink/url, notes/description
+                            </code>
+                        </div>
+                        <textarea
+                            value={bulkImportText}
+                            onChange={(e) => setBulkImportText(e.target.value)}
+                            placeholder={'[\n  {\n    "company": "Google",\n    "title": "Software Engineer",\n    "location": "Mountain View, CA",\n    "jobType": "Remote",\n    "salary": "$150k-$200k",\n    "status": "applied"\n  },\n  {\n    "company": "Meta",\n    "position": "Frontend Developer",\n    "city": "Menlo Park, CA",\n    "type": "Hybrid"\n  }\n]'}
+                            className="w-full h-48 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none font-mono text-sm"
+                        />
+                        <div className="flex gap-3 mt-4">
+                            <button
+                                onClick={handleBulkImport}
+                                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                            >
+                                <Database className="w-5 h-5" /> Import Jobs
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setIsBulkImportOpen(false);
+                                    setBulkImportText('');
+                                }}
+                                className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Chat Widget - Bottom Right */}
+            <div className="fixed bottom-6 right-6 z-50">
+                {!showAIChat ? (
+                    <button
+                        onClick={() => setShowAIChat(true)}
+                        className="bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl transition-all hover:scale-110"
+                    >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                    </button>
+                ) : (
+                    <div className="bg-white rounded-lg shadow-2xl w-96 h-[500px] flex flex-col">
+                        {/* Chat Header */}
+                        <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-4 rounded-t-lg flex justify-between items-center">
+                            <div>
+                                <h3 className="font-semibold">AI Assistant</h3>
+                                <p className="text-xs opacity-90">Ask about your job tracker data</p>
+                            </div>
+                            <button
+                                onClick={() => setShowAIChat(false)}
+                                className="hover:bg-white/20 rounded p-1"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Chat Messages */}
+                        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3">
+                            {aiChatMessages.length === 0 ? (
+                                <div className="text-center text-gray-500 mt-8">
+                                    <p className="text-sm mb-4">👋 Hi! I can help you with:</p>
+                                    <ul className="text-xs space-y-2 text-left max-w-xs mx-auto">
+                                        <li>• Analyzing your applications</li>
+                                        <li>• Suggesting follow-ups</li>
+                                        <li>• Generating job lists</li>
+                                        <li>• Statistics & insights</li>
+                                    </ul>
+                                </div>
+                            ) : (
+                                aiChatMessages.map((msg, idx) => (
+                                    <div key={idx} className="space-y-2">
+                                        <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`max-w-[80%] rounded-lg p-3 break-words ${
+                                                msg.role === 'user' 
+                                                    ? 'bg-blue-600 text-white' 
+                                                    : 'bg-gray-100 text-gray-800'
+                                            }`}>
+                                                <div className="text-sm prose prose-sm max-w-none break-words overflow-hidden">
+                                                    <ReactMarkdown
+                                                        components={{
+                                                            p: ({node, ...props}) => <p className="mb-2 break-words" {...props} />,
+                                                            strong: ({node, ...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                                                            ul: ({node, ...props}) => <ul className="list-disc ml-4 mb-2" {...props} />,
+                                                            ol: ({node, ...props}) => <ol className="list-decimal ml-4 mb-2" {...props} />,
+                                                            li: ({node, ...props}) => <li className="mb-1 break-words" {...props} />,
+                                                            code: ({node, inline, ...props}: any) => 
+                                                                inline ? 
+                                                                    <code className="bg-gray-200 px-1 rounded text-xs break-all" {...props} /> : 
+                                                                    <code className="block bg-gray-200 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap break-words" {...props} />
+                                                        }}
+                                                    >
+                                                        {msg.content}
+                                                    </ReactMarkdown>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {msg.action && idx === aiChatMessages.length - 1 && pendingAction && (
+                                            <div className="flex justify-start">
+                                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 max-w-[80%]">
+                                                    <p className="text-sm text-gray-700 mb-2">
+                                                        🤖 {
+                                                            msg.action.type === 'add_jobs' ? `I want to add ${Array.isArray(msg.action.data) ? msg.action.data.length : 1} job(s)` :
+                                                            msg.action.type === 'update_job' ? 'I want to update a job' :
+                                                            msg.action.type === 'delete_jobs' ? `I want to delete ${msg.action.data.ids?.length || 0} job(s)` :
+                                                            msg.action.type === 'bulk_update' ? 'I want to update multiple jobs' :
+                                                            'I want to perform an action'
+                                                        }. Do you approve?
+                                                    </p>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={handleApproveAction}
+                                                            className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                                                        >
+                                                            ✓ Approve
+                                                        </button>
+                                                        <button
+                                                            onClick={handleRejectAction}
+                                                            className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                                                        >
+                                                            ✗ Reject
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                            {isGenerating && (
+                                <div className="flex justify-start">
+                                    <div className="bg-gray-100 rounded-lg p-3">
+                                        <div className="flex gap-1">
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={chatMessagesEndRef} />
+                        </div>
+
+                        {/* Chat Input */}
+                        <div className="p-4 border-t">
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={aiChatInput}
+                                    onChange={(e) => setAiChatInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && !isGenerating && handleAIChat()}
+                                    placeholder="Ask me anything..."
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
+                                    disabled={isGenerating}
+                                />
+                                <button
+                                    onClick={handleAIChat}
+                                    disabled={isGenerating || !aiChatInput.trim()}
+                                    className="bg-purple-600 text-white rounded-lg px-4 py-2 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <svg className="w-5 h-5 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
