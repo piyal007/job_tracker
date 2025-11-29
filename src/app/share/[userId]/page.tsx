@@ -117,14 +117,14 @@ export default function SharedView() {
                             <thead className="bg-gray-700 sticky top-0 z-10">
                                 <tr>
                                     <th className="px-4 py-4 text-center text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '50px' }}>#</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '110px' }}>Date</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '180px' }}>Company</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '200px' }}>Position</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '120px' }}>Job Nature</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '110px' }}>Job Type</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '140px' }}>Location</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '130px' }}>Status</th>
-                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase" style={{ width: '80px' }}>Link</th>
+                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '100px' }}>Date</th>
+                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '150px' }}>Company</th>
+                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '160px' }}>Position</th>
+                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '100px' }}>Job Nature</th>
+                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '90px' }}>Job Type</th>
+                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '110px' }}>Location</th>
+                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase border-r border-gray-600" style={{ width: '120px' }}>Status</th>
+                                    <th className="px-4 py-4 text-left text-xs font-semibold text-white uppercase" style={{ width: '70px' }}>Link</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -138,47 +138,51 @@ export default function SharedView() {
                                                 : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                                         } hover:bg-blue-100`}
                                     >
-                                        <td className="px-4 py-3 text-center text-sm font-medium text-gray-700 border-r border-gray-300">{index + 1}</td>
-                                        <td className="px-4 py-3 text-sm text-gray-500 border-r border-gray-300">{new Date(job.date).toLocaleDateString()}</td>
-                                        <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-300">
+                                        <td className="px-4 py-3 text-center text-sm font-medium text-gray-700 border-r border-gray-300" style={{ maxWidth: '50px' }}>{index + 1}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-500 border-r border-gray-300" style={{ maxWidth: '100px' }}>
+                                            <div className="overflow-hidden text-ellipsis whitespace-nowrap">
+                                                {new Date(job.date).toLocaleDateString()}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-300" style={{ maxWidth: '150px' }}>
                                             <div className="overflow-hidden text-ellipsis whitespace-nowrap" title={job.company}>
                                                 {job.company}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-900 border-r border-gray-300">
+                                        <td className="px-4 py-3 text-sm text-gray-900 border-r border-gray-300" style={{ maxWidth: '160px' }}>
                                             <div className="overflow-hidden text-ellipsis whitespace-nowrap" title={job.title}>
                                                 {job.title}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-sm border-r border-gray-300">
+                                        <td className="px-4 py-3 text-sm border-r border-gray-300" style={{ maxWidth: '100px' }}>
                                             {job.jobNature && (
-                                                <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                                                <span className="inline-block px-2 py-1 bg-green-100 text-green-800 rounded text-xs overflow-hidden text-ellipsis whitespace-nowrap max-w-full" title={job.jobNature}>
                                                     {job.jobNature}
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm border-r border-gray-300">
+                                        <td className="px-4 py-3 text-sm border-r border-gray-300" style={{ maxWidth: '90px' }}>
                                             {job.jobType && (
-                                                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                                                <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs overflow-hidden text-ellipsis whitespace-nowrap max-w-full" title={job.jobType}>
                                                     {job.jobType}
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-500 border-r border-gray-300">
+                                        <td className="px-4 py-3 text-sm text-gray-500 border-r border-gray-300" style={{ maxWidth: '110px' }}>
                                             <div className="overflow-hidden text-ellipsis whitespace-nowrap" title={job.location || ''}>
                                                 {job.location || '-'}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-sm border-r border-gray-300">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>
+                                        <td className="px-4 py-3 text-sm border-r border-gray-300" style={{ maxWidth: '120px' }}>
+                                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium overflow-hidden text-ellipsis whitespace-nowrap max-w-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`} title={job.status}>
                                                 {job.status}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-4 py-3 text-sm" style={{ maxWidth: '70px' }}>
                                             {job.jobLink && (
-                                                <a href={job.jobLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                                    <ExternalLink className="w-4 h-4" />
-                                                    Link
+                                                <a href={job.jobLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 overflow-hidden" onClick={(e) => e.stopPropagation()} title={job.jobLink}>
+                                                    <ExternalLink className="w-4 h-4 flex-shrink-0" />
+                                                    <span className="overflow-hidden text-ellipsis whitespace-nowrap">Link</span>
                                                 </a>
                                             )}
                                         </td>
@@ -209,24 +213,28 @@ export default function SharedView() {
                                                 : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                                         } hover:bg-blue-100`}
                                     >
-                                        <td className="px-4 py-3 text-center text-sm font-medium text-gray-700 border-r border-gray-300">{index + 1}</td>
-                                        <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-300">
+                                        <td className="px-4 py-3 text-center text-sm font-medium text-gray-700 border-r border-gray-300" style={{ maxWidth: '50px' }}>{index + 1}</td>
+                                        <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-300" style={{ maxWidth: '250px' }}>
                                             <div className="overflow-hidden text-ellipsis whitespace-nowrap" title={portal.name}>
                                                 {portal.name}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-600 border-r border-gray-300">{portal.category}</td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-4 py-3 text-sm text-gray-600 border-r border-gray-300" style={{ maxWidth: '150px' }}>
+                                            <div className="overflow-hidden text-ellipsis whitespace-nowrap" title={portal.category}>
+                                                {portal.category}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-sm" style={{ maxWidth: '350px' }}>
                                             <a 
                                                 href={portal.url} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer" 
-                                                className="text-blue-600 hover:underline flex items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap"
+                                                className="text-blue-600 hover:underline flex items-center gap-1"
                                                 onClick={(e) => e.stopPropagation()}
                                                 title={portal.url}
                                             >
                                                 <ExternalLink className="w-4 h-4 flex-shrink-0" />
-                                                <span className="overflow-hidden text-ellipsis">{portal.url}</span>
+                                                <span className="overflow-hidden text-ellipsis whitespace-nowrap">{portal.url}</span>
                                             </a>
                                         </td>
                                     </tr>
